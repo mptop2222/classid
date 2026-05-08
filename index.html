@@ -3,18 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>學生學號辨識系統</title>
+    <title>學生學號辨識系統 - 優化版</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     <style>
         body { font-family: sans-serif; text-align: center; background: #f4f4f9; margin: 0; padding: 20px; }
         #video-container { position: relative; display: inline-block; width: 100%; max-width: 500px; }
         video { width: 100%; border-radius: 10px; background: #000; }
-        #overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                   width: 70%; height: 20%; border: 2px solid #00ff00; box-shadow: 0 0 15px rgba(0,255,0,0.5); }
+        /* 綠框區域：這不僅是視覺導引，也是我們實際擷取的範圍 */
+        #overlay { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 70%; height: 20%; border: 3px solid #00ff00; box-shadow: 0 0 15px rgba(0,255,0,0.5); 
+            pointer-events: none;
+        }
         #result-panel { margin-top: 20px; padding: 15px; background: white; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .student-info { font-size: 1.2rem; font-weight: bold; color: #2c3e50; }
-        #log-table { width: 100%; margin-top: 20px; border-collapse: collapse; }
-        #log-table th, #log-table td { border: 1px solid #ddd; padding: 8px; }
+        .student-info { font-size: 1.5rem; font-weight: bold; color: #2c3e50; margin-top: 10px; }
+        #log-table { width: 100%; margin-top: 20px; border-collapse: collapse; background: white; }
+        #log-table th, #log-table td { border: 1px solid #ddd; padding: 12px; }
+        #log-table th { background-color: #eee; }
+        /* 用於偵錯的隱形畫布，若要看截取畫面可把 display 改為 block */
+        #debug-canvas { display: none; margin: 10px auto; border: 1px solid red; }
     </style>
 </head>
 <body>
@@ -25,6 +32,8 @@
         <video id="webcam" autoplay playsinline></video>
         <div id="overlay"></div>
     </div>
+
+    <canvas id="debug-canvas"></canvas>
 
     <div id="result-panel">
         <p>狀態: <span id="status">準備中...</span></p>
@@ -45,11 +54,10 @@
     </table>
 
     <script type="module">
-        // 引入 Firebase SDK
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
         import { getDatabase, ref, push, set } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-database.js";
 
-        // 你的 Firebase 設定檔 (請確認 apiKey 是否與後台完全一致)
+        // Firebase 配置
         const firebaseConfig = {
             apiKey: "AIzaSyDIBZcv7FDus86ItqMNdGaTGLFUH9TkGg", 
             authDomain: "new123-88ala.firebaseapp.com",
@@ -60,11 +68,10 @@
             appId: "1:1098459270837:web:51532d8f2cffbf9271b8fc"
         };
 
-        // 初始化 Firebase 與 Realtime Database
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // 1. 學生資料庫
+        // 學生資料庫
         const studentDB = {
             "112001": { name: "王小明", class: "高一甲班" },
             "112002": { name: "李大華", class: "高一乙班" },
@@ -75,12 +82,17 @@
         const status = document.getElementById('status');
         const display = document.getElementById('student-display');
         const logBody = document.getElementById('log-body');
+        const debugCanvas = document.getElementById('debug-canvas');
 
-        // 2. 啟動攝影機
+        // 啟動攝影機
         async function setupCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment" }, 
+                    video: { 
+                        facingMode: "environment",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }, 
                     audio: false 
                 });
                 video.srcObject = stream;
@@ -91,53 +103,62 @@
             }
         }
 
-        // 3. 執行 OCR 辨識
+        // 執行 OCR 辨識
         async function startRecognition() {
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
+            const context = debugCanvas.getContext('2d');
 
             setInterval(async () => {
-                // 確保影片已經順利載入
                 if (video.videoWidth === 0) return;
 
-                // 將影片目前的畫面畫到隱形畫布上
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                // 核心改進：計算綠框在影片中的實際座標 (對應 CSS 的 70% 寬, 20% 高)
+                const cropWidth = video.videoWidth * 0.7;
+                const cropHeight = video.videoHeight * 0.2;
+                const startX = (video.videoWidth - cropWidth) / 2;
+                const startY = (video.videoHeight - cropHeight) / 2;
 
-                // 使用 Tesseract 辨識文字 (設定只辨識數字提高準確率)
-                const { data: { text } } = await Tesseract.recognize(canvas, 'eng', {
-                    tessedit_char_whitelist: '0123456789'
-                });
+                debugCanvas.width = cropWidth;
+                debugCanvas.height = cropHeight;
 
-                const cleanText = text.replace(/\s/g, '');
-                if (cleanText) {
-                    checkStudent(cleanText);
+                // 僅擷取綠框區域的影像
+                context.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
+                try {
+                    // 核心改進：使用 Tesseract 單行辨識模式 (PSM 7)
+                    const { data: { text } } = await Tesseract.recognize(debugCanvas, 'eng', {
+                        tessedit_char_whitelist: '0123456789',
+                        tessedit_pageseg_mode: '7' 
+                    });
+
+                    const cleanText = text.replace(/\s/g, '');
+                    if (cleanText) {
+                        checkStudent(cleanText);
+                    }
+                } catch (error) {
+                    console.error("OCR 錯誤:", error);
                 }
-            }, 2000); // 每 2 秒辨識一次
+            }, 1500); // 縮短掃描間隔到 1.5 秒
         }
 
-        // 4. 比對資料並儲存
         let lastScannedId = "";
         let lastScanTime = 0;
-        const COOLDOWN_MS = 5000; // 設定 5 秒冷卻時間，防止狂刷資料庫
+        const COOLDOWN_MS = 5000; 
 
         function checkStudent(id) {
             if (studentDB[id]) {
                 const now = Date.now();
-                
-                // 防重複記錄邏輯：如果是同一個人且在 5 秒內，則忽略
-                if (id === lastScannedId && (now - lastScanTime) < COOLDOWN_MS) {
-                    return;
-                }
+                if (id === lastScannedId && (now - lastScanTime) < COOLDOWN_MS) return;
 
                 lastScannedId = id;
                 lastScanTime = now;
 
                 const info = studentDB[id];
-                display.innerText = `${info.class} - ${info.name} (學號: ${id})`;
+                display.innerText = `${info.class} - ${info.name}`;
+                display.style.color = "#27ae60"; // 成功辨識變綠色
                 
                 addLog(id, info);
+                
+                // 3秒後恢復顏色
+                setTimeout(() => { display.style.color = "#2c3e50"; }, 3000);
             }
         }
 
@@ -145,7 +166,6 @@
             const now = new Date();
             const timeString = now.toLocaleTimeString();
             
-            // 寫入前端表格
             const row = `<tr>
                 <td>${timeString}</td>
                 <td>${id}</td>
@@ -154,20 +174,13 @@
             </tr>`;
             logBody.insertAdjacentHTML('afterbegin', row);
 
-            // 寫入 Firebase Realtime Database
             const logsRef = ref(db, 'scan_logs');
-            const newLogRef = push(logsRef); // 建立一個帶有唯一 ID 的新節點
-            
-            set(newLogRef, {
+            push(logsRef, {
                 timestamp: now.toISOString(),
                 studentId: id,
                 className: info.class,
                 name: info.name
-            }).then(() => {
-                console.log(`學號 ${id} 已成功上傳至 Firebase`);
-            }).catch((error) => {
-                console.error("寫入 Firebase 發生錯誤:", error);
-            });
+            }).catch(e => console.error("Firebase 寫入失敗", e));
         }
 
         setupCamera();
