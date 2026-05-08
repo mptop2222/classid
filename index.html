@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學生學號辨識系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f4f4f9; margin: 0; padding: 20px; }
+        #video-container { position: relative; display: inline-block; width: 100%; max-width: 500px; }
+        video { width: 100%; border-radius: 10px; background: #000; }
+        #overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                   width: 70%; height: 20%; border: 2px solid #00ff00; box-shadow: 0 0 15px rgba(0,255,0,0.5); }
+        #result-panel { margin-top: 20px; padding: 15px; background: white; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .student-info { font-size: 1.2rem; font-weight: bold; color: #2c3e50; }
+        #log-table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+        #log-table th, #log-table td { border: 1px solid #ddd; padding: 8px; }
+    </style>
+</head>
+<body>
+
+    <h2>🏫 學生進出辨識系統</h2>
+    
+    <div id="video-container">
+        <video id="webcam" autoplay playsinline></video>
+        <div id="overlay"></div>
+    </div>
+
+    <div id="result-panel">
+        <p>狀態: <span id="status">準備中...</span></p>
+        <div class="student-info" id="student-display">請將學號對準綠框</div>
+    </div>
+
+    <h3>今日掃描記錄</h3>
+    <table id="log-table">
+        <thead>
+            <tr>
+                <th>時間</th>
+                <th>學號</th>
+                <th>班級</th>
+                <th>姓名</th>
+            </tr>
+        </thead>
+        <tbody id="log-body"></tbody>
+    </table>
+
+    <script>
+        // 1. 學生資料庫 (實務上可由 Excel 匯出 JSON 格式)
+        const studentDB = {
+            "112001": { name: "王小明", class: "高一甲班" },
+            "112002": { name: "李大華", class: "高一乙班" },
+            "112003": { name: "張美美", class: "高二丙班" }
+        };
+
+        const video = document.getElementById('webcam');
+        const status = document.getElementById('status');
+        const display = document.getElementById('student-display');
+        const logBody = document.getElementById('log-body');
+
+        // 2. 啟動攝影機
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment" }, 
+                audio: false 
+            });
+            video.srcObject = stream;
+            status.innerText = "掃描中...";
+            startRecognition();
+        }
+
+        // 3. 執行 OCR 辨識
+        async function startRecognition() {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            setInterval(async () => {
+                // 將影片目前的畫面畫到隱形畫布上
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // 使用 Tesseract 辨識文字 (設定只辨識數字提高準確率)
+                const { data: { text } } = await Tesseract.recognize(canvas, 'eng', {
+                    tessedit_char_whitelist: '0123456789'
+                });
+
+                const cleanText = text.replace(/\s/g, '');
+                checkStudent(cleanText);
+            }, 2000); // 每 2 秒辨識一次
+        }
+
+        // 4. 比對資料並儲存
+        function checkStudent(id) {
+            if (studentDB[id]) {
+                const info = studentDB[id];
+                display.innerText = `${info.class} - ${info.name} (學號: ${id})`;
+                
+                // 防止重複記錄 (簡單邏輯：間隔 5 秒才能再次記錄同一人)
+                addLog(id, info);
+            }
+        }
+
+        function addLog(id, info) {
+            const now = new Date().toLocaleTimeString();
+            const row = `<tr>
+                <td>${now}</td>
+                <td>${id}</td>
+                <td>${info.class}</td>
+                <td>${info.name}</td>
+            </tr>`;
+            logBody.insertAdjacentHTML('afterbegin', row);
+        }
+
+        setupCamera();
+    </script>
+</body>
+</html>
