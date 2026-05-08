@@ -44,8 +44,27 @@
         <tbody id="log-body"></tbody>
     </table>
 
-    <script>
-        // 1. 學生資料庫 (實務上可由 Excel 匯出 JSON 格式)
+    <script type="module">
+        // 引入 Firebase SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
+        import { getDatabase, ref, push, set } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-database.js";
+
+        // 你的 Firebase 設定檔 (請確認 apiKey 是否與後台完全一致)
+        const firebaseConfig = {
+            apiKey: "AIzaSyDIBZcv7FDus86ItqMNdGaTGLFUH9TkGg", 
+            authDomain: "new123-88ala.firebaseapp.com",
+            databaseURL: "https://new123-88ala-default-rtdb.firebaseio.com",
+            projectId: "new123-88ala",
+            storageBucket: "new123-88ala.appspot.com",
+            messagingSenderId: "1098459270837",
+            appId: "1:1098459270837:web:51532d8f2cffbf9271b8fc"
+        };
+
+        // 初始化 Firebase 與 Realtime Database
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // 1. 學生資料庫
         const studentDB = {
             "112001": { name: "王小明", class: "高一甲班" },
             "112002": { name: "李大華", class: "高一乙班" },
@@ -59,13 +78,17 @@
 
         // 2. 啟動攝影機
         async function setupCamera() {
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment" }, 
-                audio: false 
-            });
-            video.srcObject = stream;
-            status.innerText = "掃描中...";
-            startRecognition();
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment" }, 
+                    audio: false 
+                });
+                video.srcObject = stream;
+                status.innerText = "掃描中...";
+                startRecognition();
+            } catch (err) {
+                status.innerText = "相機啟動失敗: " + err.message;
+            }
         }
 
         // 3. 執行 OCR 辨識
@@ -74,6 +97,9 @@
             const context = canvas.getContext('2d');
 
             setInterval(async () => {
+                // 確保影片已經順利載入
+                if (video.videoWidth === 0) return;
+
                 // 將影片目前的畫面畫到隱形畫布上
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
@@ -85,30 +111,63 @@
                 });
 
                 const cleanText = text.replace(/\s/g, '');
-                checkStudent(cleanText);
+                if (cleanText) {
+                    checkStudent(cleanText);
+                }
             }, 2000); // 每 2 秒辨識一次
         }
 
         // 4. 比對資料並儲存
+        let lastScannedId = "";
+        let lastScanTime = 0;
+        const COOLDOWN_MS = 5000; // 設定 5 秒冷卻時間，防止狂刷資料庫
+
         function checkStudent(id) {
             if (studentDB[id]) {
+                const now = Date.now();
+                
+                // 防重複記錄邏輯：如果是同一個人且在 5 秒內，則忽略
+                if (id === lastScannedId && (now - lastScanTime) < COOLDOWN_MS) {
+                    return;
+                }
+
+                lastScannedId = id;
+                lastScanTime = now;
+
                 const info = studentDB[id];
                 display.innerText = `${info.class} - ${info.name} (學號: ${id})`;
                 
-                // 防止重複記錄 (簡單邏輯：間隔 5 秒才能再次記錄同一人)
                 addLog(id, info);
             }
         }
 
         function addLog(id, info) {
-            const now = new Date().toLocaleTimeString();
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            
+            // 寫入前端表格
             const row = `<tr>
-                <td>${now}</td>
+                <td>${timeString}</td>
                 <td>${id}</td>
                 <td>${info.class}</td>
                 <td>${info.name}</td>
             </tr>`;
             logBody.insertAdjacentHTML('afterbegin', row);
+
+            // 寫入 Firebase Realtime Database
+            const logsRef = ref(db, 'scan_logs');
+            const newLogRef = push(logsRef); // 建立一個帶有唯一 ID 的新節點
+            
+            set(newLogRef, {
+                timestamp: now.toISOString(),
+                studentId: id,
+                className: info.class,
+                name: info.name
+            }).then(() => {
+                console.log(`學號 ${id} 已成功上傳至 Firebase`);
+            }).catch((error) => {
+                console.error("寫入 Firebase 發生錯誤:", error);
+            });
         }
 
         setupCamera();
