@@ -52,16 +52,15 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getDatabase, ref, get, push, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
-    // 1. Firebase 配置 (已修正 databaseURL)
+    // 1. Firebase 配置 (已更新為新的資料庫)
     const firebaseConfig = {
-        apiKey: "AIzaSyAM1gRs8aO-eZSamx1-EF3y2obIA0LvaZI",
-        authDomain: "nanshan-student.firebaseapp.com",
-        databaseURL: "https://nanshan-student-default-rtdb.firebaseio.com",
-        projectId: "nanshan-student",
-        storageBucket: "nanshan-student.firebasestorage.app",
-        messagingSenderId: "879754099667",
-        appId: "1:879754099667:web:0c08805c2d918b8b41e4d26",
-        measurementId: "G-KTX7TH9ETW"
+        apiKey: "AIzaSyDIBZcv7FDus86I_tqMNdGaTGLFUH9TkGg",
+        authDomain: "new123-88a1a.firebaseapp.com",
+        databaseURL: "https://new123-88a1a-default-rtdb.firebaseio.com",
+        projectId: "new123-88a1a",
+        storageBucket: "new123-88a1a.appspot.com",
+        messagingSenderId: "1098459270837",
+        appId: "1:1098459270837:web:51532d8f2cffbf9271b8fc"
     };
 
     const app = initializeApp(firebaseConfig);
@@ -74,21 +73,33 @@
     const status = document.getElementById('status');
     const resultBox = document.getElementById('result-box');
 
-    // 2. 開啟相機
+    // 2. 開啟相機 (增強相容性版)
     startBtn.onclick = async () => {
         try {
+            // 先嘗試強制開啟後鏡頭
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: "environment" } 
             });
-            video.srcObject = stream;
-            startBtn.style.display = 'none';
-            scanBtn.disabled = false;
-            status.innerText = "相機已啟動，請對準衣服學號";
+            setupVideo(stream);
         } catch (err) {
-            console.error(err);
-            alert("無法存取相機，請確保網站具備權限");
+            console.warn("無法開啟後鏡頭，嘗試開啟預設鏡頭...", err);
+            try {
+                // 如果後鏡頭失敗，退而求其次開啟任何可用的鏡頭
+                const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                setupVideo(fallbackStream);
+            } catch (fallbackErr) {
+                console.error(fallbackErr);
+                alert("無法存取相機，請確保您是在 Chrome/Safari 中開啟，並已允許相機權限。");
+            }
         }
     };
+
+    function setupVideo(stream) {
+        video.srcObject = stream;
+        startBtn.style.display = 'none';
+        scanBtn.disabled = false;
+        status.innerText = "相機已啟動，請對準衣服學號";
+    }
 
     // 3. 掃描與辨識邏輯
     scanBtn.onclick = async () => {
