@@ -1,189 +1,165 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>學生學號辨識系統 - 優化版</title>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <title>學生學號掃描系統 - 南山中學行政版</title>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #f4f4f9; margin: 0; padding: 20px; }
-        #video-container { position: relative; display: inline-block; width: 100%; max-width: 500px; }
-        video { width: 100%; border-radius: 10px; background: #000; }
-        /* 綠框區域：這不僅是視覺導引，也是我們實際擷取的範圍 */
-        #overlay { 
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 70%; height: 20%; border: 3px solid #00ff00; box-shadow: 0 0 15px rgba(0,255,0,0.5); 
-            pointer-events: none;
-        }
-        #result-panel { margin-top: 20px; padding: 15px; background: white; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .student-info { font-size: 1.5rem; font-weight: bold; color: #2c3e50; margin-top: 10px; }
-        #log-table { width: 100%; margin-top: 20px; border-collapse: collapse; background: white; }
-        #log-table th, #log-table td { border: 1px solid #ddd; padding: 12px; }
-        #log-table th { background-color: #eee; }
-        /* 用於偵錯的隱形畫布，若要看截取畫面可把 display 改為 block */
-        #debug-canvas { display: none; margin: 10px auto; border: 1px solid red; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
+        h1 { color: #1a73e8; font-size: 1.5rem; margin-bottom: 20px; }
+        #video-container { position: relative; width: 100%; aspect-ratio: 4/3; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        #scan-region { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 70%; height: 30%; border: 2px solid #00ff00; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); pointer-events: none; }
+        .btn { background-color: #1a73e8; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; width: 100%; margin-bottom: 10px; }
+        .btn:disabled { background-color: #ccc; }
+        .btn-scan { background-color: #34a853; height: 60px; font-weight: bold; font-size: 1.2rem; }
+        #status { margin-top: 15px; font-weight: bold; min-height: 24px; color: #5f6368; }
+        #result-box { margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 10px; display: none; text-align: left; background: #f8f9fa; }
+        .label { font-weight: bold; color: #555; }
+        .value { color: #1a73e8; font-size: 1.1rem; }
+        canvas { display: none; }
     </style>
 </head>
 <body>
 
-    <h2>🏫 學生進出辨識系統</h2>
+<div class="container">
+    <h1>學生學號掃描系統</h1>
     
     <div id="video-container">
         <video id="webcam" autoplay playsinline></video>
-        <div id="overlay"></div>
+        <div id="scan-region"></div>
     </div>
 
-    <canvas id="debug-canvas"></canvas>
+    <button id="start-btn" class="btn">開啟相機</button>
+    <button id="scan-btn" class="btn btn-scan" disabled>擷取並辨識學號</button>
+    
+    <div id="status">準備緒...</div>
 
-    <div id="result-panel">
-        <p>狀態: <span id="status">準備中...</span></p>
-        <div class="student-info" id="student-display">請將學號對準綠框</div>
+    <div id="result-box">
+        <div><span class="label">學號：</span><span id="res-id" class="value">-</span></div>
+        <div><span class="label">班級：</span><span id="res-class" class="value">-</span></div>
+        <div><span class="label">姓名：</span><span id="res-name" class="value">-</span></div>
+        <div style="margin-top: 10px; color: #34a853; font-weight: bold;" id="save-msg"></div>
     </div>
+    
+    <canvas id="snapshot"></canvas>
+</div>
 
-    <h3>今日掃描記錄</h3>
-    <table id="log-table">
-        <thead>
-            <tr>
-                <th>時間</th>
-                <th>學號</th>
-                <th>班級</th>
-                <th>姓名</th>
-            </tr>
-        </thead>
-        <tbody id="log-body"></tbody>
-    </table>
+<!-- Firebase SDK -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getDatabase, ref, get, push, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-app.js";
-        import { getDatabase, ref, push, set } from "https://www.gstatic.com/firebasejs/10.11.0/firebase-database.js";
+    // 1. Firebase 配置 (已修正 databaseURL)
+    const firebaseConfig = {
+        apiKey: "AIzaSyAM1gRs8aO-eZSamx1-EF3y2obIA0LvaZI",
+        authDomain: "nanshan-student.firebaseapp.com",
+        databaseURL: "https://nanshan-student-default-rtdb.firebaseio.com",
+        projectId: "nanshan-student",
+        storageBucket: "nanshan-student.firebasestorage.app",
+        messagingSenderId: "879754099667",
+        appId: "1:879754099667:web:0c08805c2d918b8b41e4d26",
+        measurementId: "G-KTX7TH9ETW"
+    };
 
-        // Firebase 配置
-        const firebaseConfig = {
-            apiKey: "AIzaSyDIBZcv7FDus86ItqMNdGaTGLFUH9TkGg", 
-            authDomain: "new123-88ala.firebaseapp.com",
-            databaseURL: "https://new123-88ala-default-rtdb.firebaseio.com",
-            projectId: "new123-88ala",
-            storageBucket: "new123-88ala.appspot.com",
-            messagingSenderId: "1098459270837",
-            appId: "1:1098459270837:web:51532d8f2cffbf9271b8fc"
-        };
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
 
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('snapshot');
+    const startBtn = document.getElementById('start-btn');
+    const scanBtn = document.getElementById('scan-btn');
+    const status = document.getElementById('status');
+    const resultBox = document.getElementById('result-box');
 
-        // 學生資料庫
-        const studentDB = {
-            "112001": { name: "王小明", class: "高一甲班" },
-            "112002": { name: "李大華", class: "高一乙班" },
-            "112003": { name: "張美美", class: "高二丙班" }
-        };
+    // 2. 開啟相機
+    startBtn.onclick = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment" } 
+            });
+            video.srcObject = stream;
+            startBtn.style.display = 'none';
+            scanBtn.disabled = false;
+            status.innerText = "相機已啟動，請對準衣服學號";
+        } catch (err) {
+            console.error(err);
+            alert("無法存取相機，請確保網站具備權限");
+        }
+    };
 
-        const video = document.getElementById('webcam');
-        const status = document.getElementById('status');
-        const display = document.getElementById('student-display');
-        const logBody = document.getElementById('log-body');
-        const debugCanvas = document.getElementById('debug-canvas');
+    // 3. 掃描與辨識邏輯
+    scanBtn.onclick = async () => {
+        status.innerText = "辨識中...";
+        scanBtn.disabled = true;
+        resultBox.style.display = 'none';
 
-        // 啟動攝影機
-        async function setupCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: "environment",
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    }, 
-                    audio: false 
+        // 擷取畫面
+        const context = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // 使用 Tesseract.js 進行 OCR
+        try {
+            // 限制只辨識數字 (學號通常是數字)
+            const result = await Tesseract.recognize(canvas, 'eng', {
+                tessedit_char_whitelist: '0123456789',
+                logger: m => console.log(m)
+            });
+
+            // 取得純數字結果
+            const studentId = result.data.text.replace(/[^0-9]/g, '');
+
+            if (studentId.length >= 4) { // 基本學號長度檢查
+                await queryAndSave(studentId);
+            } else {
+                status.innerText = "辨識失敗或學號太短，請再試一次";
+                scanBtn.disabled = false;
+            }
+        } catch (err) {
+            status.innerText = "辨識程式發生錯誤";
+            scanBtn.disabled = false;
+        }
+    };
+
+    // 4. 資料庫查詢與儲存
+    async function queryAndSave(id) {
+        status.innerText = `查詢學號：${id}`;
+        try {
+            // 查詢學生資料 (路徑假設為 students/學號)
+            const studentRef = ref(db, `students/${id}`);
+            const snapshot = await get(studentRef);
+
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                document.getElementById('res-id').innerText = id;
+                document.getElementById('res-class').innerText = data.class || "未設定";
+                document.getElementById('res-name').innerText = data.name || "未設定";
+                
+                // 儲存掃描紀錄
+                await push(ref(db, 'scan_records'), {
+                    studentId: id,
+                    name: data.name,
+                    class: data.class,
+                    timestamp: serverTimestamp()
                 });
-                video.srcObject = stream;
-                status.innerText = "掃描中...";
-                startRecognition();
-            } catch (err) {
-                status.innerText = "相機啟動失敗: " + err.message;
+
+                document.getElementById('save-msg').innerText = "✅ 已成功紀錄至資料庫";
+                resultBox.style.display = 'block';
+                status.innerText = "辨識完成";
+            } else {
+                status.innerText = `找不到學號 ${id} 的學生資料`;
             }
+        } catch (err) {
+            console.error(err);
+            status.innerText = "資料庫連線錯誤";
         }
+        scanBtn.disabled = false;
+    }
+</script>
 
-        // 執行 OCR 辨識
-        async function startRecognition() {
-            const context = debugCanvas.getContext('2d');
-
-            setInterval(async () => {
-                if (video.videoWidth === 0) return;
-
-                // 核心改進：計算綠框在影片中的實際座標 (對應 CSS 的 70% 寬, 20% 高)
-                const cropWidth = video.videoWidth * 0.7;
-                const cropHeight = video.videoHeight * 0.2;
-                const startX = (video.videoWidth - cropWidth) / 2;
-                const startY = (video.videoHeight - cropHeight) / 2;
-
-                debugCanvas.width = cropWidth;
-                debugCanvas.height = cropHeight;
-
-                // 僅擷取綠框區域的影像
-                context.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-
-                try {
-                    // 核心改進：使用 Tesseract 單行辨識模式 (PSM 7)
-                    const { data: { text } } = await Tesseract.recognize(debugCanvas, 'eng', {
-                        tessedit_char_whitelist: '0123456789',
-                        tessedit_pageseg_mode: '7' 
-                    });
-
-                    const cleanText = text.replace(/\s/g, '');
-                    if (cleanText) {
-                        checkStudent(cleanText);
-                    }
-                } catch (error) {
-                    console.error("OCR 錯誤:", error);
-                }
-            }, 1500); // 縮短掃描間隔到 1.5 秒
-        }
-
-        let lastScannedId = "";
-        let lastScanTime = 0;
-        const COOLDOWN_MS = 5000; 
-
-        function checkStudent(id) {
-            if (studentDB[id]) {
-                const now = Date.now();
-                if (id === lastScannedId && (now - lastScanTime) < COOLDOWN_MS) return;
-
-                lastScannedId = id;
-                lastScanTime = now;
-
-                const info = studentDB[id];
-                display.innerText = `${info.class} - ${info.name}`;
-                display.style.color = "#27ae60"; // 成功辨識變綠色
-                
-                addLog(id, info);
-                
-                // 3秒後恢復顏色
-                setTimeout(() => { display.style.color = "#2c3e50"; }, 3000);
-            }
-        }
-
-        function addLog(id, info) {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString();
-            
-            const row = `<tr>
-                <td>${timeString}</td>
-                <td>${id}</td>
-                <td>${info.class}</td>
-                <td>${info.name}</td>
-            </tr>`;
-            logBody.insertAdjacentHTML('afterbegin', row);
-
-            const logsRef = ref(db, 'scan_logs');
-            push(logsRef, {
-                timestamp: now.toISOString(),
-                studentId: id,
-                className: info.class,
-                name: info.name
-            }).catch(e => console.error("Firebase 寫入失敗", e));
-        }
-
-        setupCamera();
-    </script>
 </body>
 </html>
