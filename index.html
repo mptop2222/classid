@@ -20,6 +20,9 @@
         .label { font-weight: bold; color: #555; }
         .value { color: #1a73e8; font-size: 1.1rem; }
         canvas { display: none; }
+        #manual-input-container { margin-top: 15px; display: flex; gap: 10px; }
+        #manual-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem; }
+        .btn-manual { background-color: #fbbc05; color: #333; font-weight: bold; padding: 10px 15px; }
     </style>
 </head>
 <body>
@@ -33,9 +36,14 @@
     </div>
 
     <button id="start-btn" class="btn">開啟相機</button>
-    <button id="scan-btn" class="btn btn-scan" disabled>擷取並辨識學號</button>
+    <button id="scan-btn" class="btn btn-scan" disabled>擷取畫面並辨識</button>
     
-    <div id="status">準備緒...</div>
+    <div id="manual-input-container">
+        <input type="text" id="manual-input" placeholder="或手動輸入學號測試">
+        <button id="manual-btn" class="btn btn-manual">查詢</button>
+    </div>
+
+    <div id="status">準備就緒...</div>
 
     <div id="result-box">
         <div><span class="label">學號：</span><span id="res-id" class="value">-</span></div>
@@ -49,10 +57,10 @@
 
 <!-- Firebase SDK -->
 <script type="module">
+    // 引入 query, orderByChild, equalTo 來進行欄位搜尋
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getDatabase, ref, get, push, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+    import { getDatabase, ref, get, push, serverTimestamp, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
-    // 1. Firebase 配置 (已更新為新的資料庫)
     const firebaseConfig = {
         apiKey: "AIzaSyDIBZcv7FDus86I_tqMNdGaTGLFUH9TkGg",
         authDomain: "new123-88a1a.firebaseapp.com",
@@ -70,26 +78,23 @@
     const canvas = document.getElementById('snapshot');
     const startBtn = document.getElementById('start-btn');
     const scanBtn = document.getElementById('scan-btn');
+    const manualBtn = document.getElementById('manual-btn');
+    const manualInput = document.getElementById('manual-input');
     const status = document.getElementById('status');
     const resultBox = document.getElementById('result-box');
 
-    // 2. 開啟相機 (增強相容性版)
+    // 開啟相機
     startBtn.onclick = async () => {
         try {
-            // 先嘗試強制開啟後鏡頭
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment" } 
-            });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             setupVideo(stream);
         } catch (err) {
-            console.warn("無法開啟後鏡頭，嘗試開啟預設鏡頭...", err);
+            console.warn("無法開啟後鏡頭，嘗試預設鏡頭...", err);
             try {
-                // 如果後鏡頭失敗，退而求其次開啟任何可用的鏡頭
                 const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
                 setupVideo(fallbackStream);
             } catch (fallbackErr) {
-                console.error(fallbackErr);
-                alert("無法存取相機，請確保您是在 Chrome/Safari 中開啟，並已允許相機權限。");
+                alert("無法存取相機，請允許權限。");
             }
         }
     };
@@ -98,75 +103,90 @@
         video.srcObject = stream;
         startBtn.style.display = 'none';
         scanBtn.disabled = false;
-        status.innerText = "相機已啟動，請對準衣服學號";
+        status.innerText = "相機已啟動，請對準學號";
     }
 
-    // 3. 掃描與辨識邏輯
+    // 手動查詢按鈕
+    manualBtn.onclick = () => {
+        const id = manualInput.value.trim();
+        if(id) {
+            queryAndSave(id);
+        } else {
+            status.innerText = "請輸入學號";
+        }
+    };
+
+    // 掃描與辨識
     scanBtn.onclick = async () => {
         status.innerText = "辨識中...";
         scanBtn.disabled = true;
         resultBox.style.display = 'none';
 
-        // 擷取畫面
         const context = canvas.getContext('2d');
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // 使用 Tesseract.js 進行 OCR
         try {
-            // 限制只辨識數字 (學號通常是數字)
             const result = await Tesseract.recognize(canvas, 'eng', {
                 tessedit_char_whitelist: '0123456789',
-                logger: m => console.log(m)
             });
-
-            // 取得純數字結果
             const studentId = result.data.text.replace(/[^0-9]/g, '');
 
-            if (studentId.length >= 4) { // 基本學號長度檢查
+            if (studentId.length >= 4) {
                 await queryAndSave(studentId);
             } else {
                 status.innerText = "辨識失敗或學號太短，請再試一次";
                 scanBtn.disabled = false;
             }
         } catch (err) {
-            status.innerText = "辨識程式發生錯誤";
+            status.innerText = "辨識發生錯誤";
             scanBtn.disabled = false;
         }
     };
 
-    // 4. 資料庫查詢與儲存
+    // 資料庫查詢與儲存 (修改為依據 studentId 欄位搜尋)
     async function queryAndSave(id) {
-        status.innerText = `查詢學號：${id}`;
+        status.innerText = `查詢學號：${id}...`;
+        scanBtn.disabled = true;
+        
         try {
-            // 查詢學生資料 (路徑假設為 students/學號)
-            const studentRef = ref(db, `students/${id}`);
-            const snapshot = await get(studentRef);
+            // 假設學生的資料都存在 'students' 這個節點下
+            const studentsRef = ref(db, 'students');
+            
+            // 建立查詢條件：找欄位 'studentId' 等於我們掃描到(或輸入)的 id
+            const q = query(studentsRef, orderByChild('studentId'), equalTo(id));
+            const snapshot = await get(q);
 
             if (snapshot.exists()) {
-                const data = snapshot.val();
-                document.getElementById('res-id').innerText = id;
+                let data = null;
+                // 因為可能有多筆符合條件的資料，Firebase 會回傳一個列表，我們取出第一筆
+                snapshot.forEach((childSnapshot) => {
+                    data = childSnapshot.val();
+                });
+
+                document.getElementById('res-id').innerText = data.studentId || id;
                 document.getElementById('res-class').innerText = data.class || "未設定";
                 document.getElementById('res-name').innerText = data.name || "未設定";
                 
                 // 儲存掃描紀錄
                 await push(ref(db, 'scan_records'), {
-                    studentId: id,
-                    name: data.name,
-                    class: data.class,
+                    studentId: data.studentId || id,
+                    name: data.name || "",
+                    class: data.class || "",
                     timestamp: serverTimestamp()
                 });
 
                 document.getElementById('save-msg').innerText = "✅ 已成功紀錄至資料庫";
                 resultBox.style.display = 'block';
-                status.innerText = "辨識完成";
+                status.innerText = "查詢完成！";
             } else {
-                status.innerText = `找不到學號 ${id} 的學生資料`;
+                status.innerText = `資料庫中找不到學號為 ${id} 的學生。`;
+                resultBox.style.display = 'none';
             }
         } catch (err) {
             console.error(err);
-            status.innerText = "資料庫連線錯誤";
+            status.innerText = "資料庫連線錯誤，請檢查權限設定。";
         }
         scanBtn.disabled = false;
     }
