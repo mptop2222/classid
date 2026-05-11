@@ -3,65 +3,195 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>學生學號掃描系統 - 南山中學行政版</title>
+    <title>學生違規登記系統 - 行政版</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
-        h1 { color: #1a73e8; font-size: 1.5rem; margin-bottom: 20px; }
+        .container { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 550px; text-align: center; }
+        h1 { color: #d93025; font-size: 1.5rem; margin-bottom: 10px; }
+        
+        /* 頁籤切換樣式 */
+        .tab-container { display: flex; width: 100%; margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: 1px solid #1a73e8; }
+        .tab-btn { flex: 1; padding: 12px; background: white; border: none; cursor: pointer; font-weight: bold; color: #1a73e8; transition: 0.3s; font-size: 1rem; }
+        .tab-btn.active { background: #1a73e8; color: white; }
+        .content-section { display: none; width: 100%; flex-direction: column; align-items: center; }
+        .content-section.active { display: flex; }
+
         #video-container { position: relative; width: 100%; aspect-ratio: 4/3; background: #000; border-radius: 10px; overflow: hidden; margin-bottom: 15px; }
         video { width: 100%; height: 100%; object-fit: cover; }
         #scan-region { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 70%; height: 30%; border: 2px solid #00ff00; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); pointer-events: none; }
-        .btn { background-color: #1a73e8; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; width: 100%; margin-bottom: 10px; }
-        .btn:disabled { background-color: #ccc; }
+        .btn { background-color: #1a73e8; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 1rem; cursor: pointer; width: 100%; margin-bottom: 10px; transition: 0.2s; box-sizing: border-box; }
+        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
         .btn-scan { background-color: #34a853; height: 60px; font-weight: bold; font-size: 1.2rem; }
         #status { margin-top: 15px; font-weight: bold; min-height: 24px; color: #5f6368; }
-        #result-box { margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 10px; display: none; text-align: left; background: #f8f9fa; }
+        
+        #manual-input-container { margin-top: 15px; display: flex; gap: 10px; width: 100%; }
+        #manual-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem; box-sizing: border-box; }
+        .btn-manual { background-color: #fbbc05; color: #333; font-weight: bold; padding: 10px 15px; width: auto; border: none; border-radius: 5px; cursor: pointer; }
+        
+        #result-box { width: 100%; margin-top: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 10px; display: none; text-align: left; background: #f8f9fa; box-sizing: border-box; }
+        .info-row { margin-bottom: 8px; font-size: 1.1rem; }
         .label { font-weight: bold; color: #555; }
-        .value { color: #1a73e8; font-size: 1.1rem; }
+        .value { color: #1a73e8; font-weight: bold; }
+        
+        #violation-form { margin-top: 15px; padding-top: 15px; border-top: 2px dashed #ccc; }
+        .form-group { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+        .form-group input { flex: 1; margin-left: 10px; padding: 10px; font-size: 1rem; border-radius: 5px; border: 1px solid #ccc; box-sizing: border-box; }
+        .btn-submit { background-color: #ea4335; font-size: 1.1rem; font-weight: bold; }
         canvas { display: none; }
-        #manual-input-container { margin-top: 15px; display: flex; gap: 10px; }
-        #manual-input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 1rem; }
-        .btn-manual { background-color: #fbbc05; color: #333; font-weight: bold; padding: 10px 15px; }
+
+        /* 查詢區塊樣式 */
+        .query-controls { display: flex; gap: 10px; width: 100%; justify-content: center; flex-wrap: wrap; margin-bottom: 15px; align-items: center; }
+        .query-controls input, .query-controls select { padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-size: 1rem; outline: none; }
+        #query-table-container { width: 100%; overflow-x: auto; background: white; }
+        table { width: 100%; border-collapse: collapse; min-width: 450px; text-align: left; font-size: 0.95rem; }
+        th, td { border: 1px solid #ddd; padding: 10px 8px; }
+        th { background-color: #f2f2f2; color: #333; }
+        tr:nth-child(even) { background-color: #fafafa; }
+        .no-data { text-align: center; color: #777; padding: 20px; font-weight: bold; }
+
+        /* 登入區塊樣式 */
+        #login-section { position: absolute; top: 20px; right: 20px; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 10px; z-index: 1000; width: 200px; }
+        #login-section select, #login-section input { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-size: 1rem; }
+        #login-section button { padding: 10px; background: #34a853; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1rem; }
+        #user-info { position: absolute; top: 20px; right: 20px; background: white; padding: 10px 15px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: none; align-items: center; gap: 10px; z-index: 1000; }
+        #user-info button { padding: 5px 10px; background: #ea4335; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        #app-content { width: 100%; display: none; flex-direction: column; align-items: center; } 
+
+        @media (max-width: 650px) {
+            #login-section, #user-info { position: static; width: 100%; max-width: 550px; margin-bottom: 20px; box-sizing: border-box; }
+            body { padding: 10px; }
+            .query-controls { flex-direction: column; }
+        }
     </style>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
-<div class="container">
-    <h1>學生學號掃描系統</h1>
-    
-    <div id="video-container">
-        <video id="webcam" autoplay playsinline></video>
-        <div id="scan-region"></div>
+    <div id="login-section">
+        <div style="font-weight: bold; color: #1a73e8; margin-bottom: 5px; text-align: center;">🔐 系統登入</div>
+        <select id="login-account">
+            <option value="" disabled selected>請選擇帳號...</option>
+                            <option value="潘昀樺">潘昀樺</option>
+                            <option value="田安平">田安平</option>
+                            <option value="陳皇賓">陳皇賓</option>
+                            <option value="查修平">查修平</option>
+                            <option value="袁利中">袁利中</option>
+                            <option value="尹嘉澍">尹嘉澍</option>
+                            <option value="徐苙嘉">徐苙嘉</option>
+                            <option value="曾文學">曾文學</option>
+                            <option value="林智遠">林智遠</option>
+                            <option value="邱瑞香">邱瑞香</option>
+                            <option value="陳稚穎">陳稚穎</option>
+        </select>
+        <input type="password" id="login-password" placeholder="請輸入密碼">
+        <button id="login-btn">登入</button>
+        <div id="login-error" style="color: red; font-size: 0.9rem; display: none; text-align: center;">密碼錯誤或未選擇帳號</div>
     </div>
 
-    <button id="start-btn" class="btn">開啟相機</button>
-    <button id="scan-btn" class="btn btn-scan" disabled>擷取畫面並辨識</button>
-    
-    <div id="manual-input-container">
-        <input type="text" id="manual-input" placeholder="或手動輸入學號測試">
-        <button id="manual-btn" class="btn btn-manual">查詢</button>
+    <div id="user-info">
+        <span style="font-weight: bold; color: #1a73e8;">👤 <span id="current-username"></span></span>
+        <button id="logout-btn">登出</button>
     </div>
 
-    <div id="status">準備就緒...</div>
+    <div id="app-content">
+        <div class="container">
+            <h1>📝 學生違規登記系統</h1>
+            
+            <div class="tab-container">
+                <button class="tab-btn active" id="tab-register">違規登記</button>
+                <button class="tab-btn" id="tab-query">查詢紀錄</button>
+            </div>
 
-    <div id="result-box">
-        <div><span class="label">學號：</span><span id="res-id" class="value">-</span></div>
-        <div><span class="label">班級：</span><span id="res-class" class="value">-</span></div>
-        <div><span class="label">姓名：</span><span id="res-name" class="value">-</span></div>
-        <div style="margin-top: 10px; color: #34a853; font-weight: bold;" id="save-msg"></div>
+            <!-- 登記區塊 -->
+            <div id="section-register" class="content-section active">
+                <div id="video-container">
+                    <video id="webcam" autoplay playsinline></video>
+                    <div id="scan-region"></div>
+                </div>
+
+                <button id="start-btn" class="btn">開啟相機掃描</button>
+                <button id="scan-btn" class="btn btn-scan" disabled>擷取畫面並辨識</button>
+                
+                <div id="manual-input-container">
+                    <input type="text" id="manual-input" placeholder="手動輸入學號查詢">
+                    <button id="manual-btn" class="btn btn-manual">查詢</button>
+                </div>
+
+                <div id="status">準備就緒...</div>
+
+                <div id="result-box">
+                    <div class="info-row"><span class="label">學號：</span><span id="res-id" class="value">-</span></div>
+                    <div class="info-row"><span class="label">班級：</span><span id="res-class" class="value">-</span></div>
+                    <div class="info-row"><span class="label">姓名：</span><span id="res-name" class="value">-</span></div>
+                    
+                    <div id="violation-form">
+                        <div class="form-group">
+                            <span class="label">違規項目：</span>
+                            <input list="violation-list" id="violation-input" placeholder="選擇或自行輸入...">
+                            <datalist id="violation-list">
+                                <option value="提早出班級">
+                                <option value="未繡學號">
+                                <option value="外套拉鏈未拉">
+                                <option value="進校使用手機">
+                            </datalist>
+                        </div>
+                        <button id="submit-btn" class="btn btn-submit">確認登記</button>
+                    </div>
+                    <div style="margin-top: 10px; text-align: center; font-weight: bold;" id="save-msg"></div>
+                </div>
+                <canvas id="snapshot"></canvas>
+            </div>
+
+            <!-- 查詢區塊 -->
+            <div id="section-query" class="content-section">
+                <div class="query-controls">
+                    <input type="date" id="query-date">
+                    <select id="query-user-select" style="display: none;">
+<option value="ALL">所有人</option>
+                            <option value="潘昀樺">潘昀樺</option>
+                            <option value="田安平">田安平</option>
+                            <option value="陳皇賓">陳皇賓</option>
+                            <option value="查修平">查修平</option>
+                            <option value="袁利中">袁利中</option>
+                            <option value="尹嘉澍">尹嘉澍</option>
+                            <option value="徐苙嘉">徐苙嘉</option>
+                            <option value="曾文學">曾文學</option>
+                            <option value="林智遠">林智遠</option>
+                            <option value="邱瑞香">邱瑞香</option>
+                            <option value="陳稚穎">陳稚穎</option>
+                    </select>
+                    <button id="execute-query-btn" class="btn-manual" style="margin: 0;">查詢紀錄</button>
+                    <button id="export-excel-btn" class="btn-manual" style="margin: 0; background-color: #34a853; color: white; display: none;">匯出 Excel</button>
+                </div>
+                
+                <div id="query-status" style="margin-bottom: 10px; font-weight: bold; color: #5f6368;"></div>
+                
+                <div id="query-table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 20%;">日期時間</th>
+                                <th style="width: 15%;">登記者</th>
+                                <th style="width: 20%;">班級</th>
+                                <th style="width: 20%;">姓名</th>
+                                <th style="width: 25%;">違規項目</th>
+                            </tr>
+                        </thead>
+                        <tbody id="query-tbody">
+                            <tr><td colspan="5" class="no-data">請選擇日期後點擊查詢</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
     </div>
-    
-    <canvas id="snapshot"></canvas>
-</div>
 
-<!-- Firebase SDK -->
 <script type="module">
-    // 引入 query, orderByChild, equalTo 來進行欄位搜尋
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getDatabase, ref, get, push, serverTimestamp, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
-    // ⚠️ 請將下方的內容，替換成您新專案 (studentid-a48dc) 的 Firebase Config
     const firebaseConfig = {
         apiKey: "AIzaSyD8JZk2LOuK77rmJ8-c6eXSAiGOCJATWqE",
         authDomain: "studentid-a48dc.firebaseapp.com",
@@ -75,6 +205,210 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
+    // --- 登入系統與權限邏輯 ---
+    const userCredentials = {"潘昀樺": {"pwd": "1", "role": "查詢所有人的資料"}, "田安平": {"pwd": "2", "role": "查詢所有人的資料"}, "陳皇賓": {"pwd": "3", "role": "只能查詢登入人資料"}, "查修平": {"pwd": "4", "role": "查詢所有人的資料"}, "袁利中": {"pwd": "5", "role": "查詢所有人的資料"}, "尹嘉澍": {"pwd": "6", "role": "查詢所有人的資料"}, "徐苙嘉": {"pwd": "7", "role": "查詢所有人的資料"}, "曾文學": {"pwd": "8", "role": "查詢所有人的資料"}, "林智遠": {"pwd": "9", "role": "查詢所有人的資料"}, "邱瑞香": {"pwd": "10", "role": "只能查詢登入人資料"}, "陳稚穎": {"pwd": "11", "role": "只能查詢登入人資料"}};
+
+    let currentUser = localStorage.getItem("loggedInUser");
+    let currentRole = localStorage.getItem("loggedInRole");
+
+    const loginSection = document.getElementById('login-section');
+    const userInfo = document.getElementById('user-info');
+    const appContent = document.getElementById('app-content');
+    const loginAccount = document.getElementById('login-account');
+    const loginPassword = document.getElementById('login-password');
+    const loginBtn = document.getElementById('login-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+    const currentUsernameSpan = document.getElementById('current-username');
+    const loginError = document.getElementById('login-error');
+    
+    // 查詢介面元素
+    const queryUserSelect = document.getElementById('query-user-select');
+    const queryDate = document.getElementById('query-date');
+    const executeQueryBtn = document.getElementById('execute-query-btn');
+    const queryTbody = document.getElementById('query-tbody');
+    const queryStatus = document.getElementById('query-status');
+
+    // 預設日期為今天
+    const today = new Date().toLocaleDateString('en-CA'); // format: YYYY-MM-DD
+    queryDate.value = today;
+
+    function checkLoginState() {
+        if (currentUser && currentRole) {
+            loginSection.style.display = 'none';
+            userInfo.style.display = 'flex';
+            appContent.style.display = 'flex';
+            currentUsernameSpan.innerText = currentUser + (currentRole.includes("所有人") ? " (管理員)" : "");
+            
+            // 根據權限設定查詢介面
+            if (currentRole.includes("所有人")) {
+                queryUserSelect.style.display = 'block';
+                queryUserSelect.value = "ALL";
+            } else {
+                queryUserSelect.style.display = 'none';
+            }
+        } else {
+            loginSection.style.display = 'flex';
+            userInfo.style.display = 'none';
+            appContent.style.display = 'none';
+        }
+    }
+
+    loginBtn.onclick = () => {
+        const acc = loginAccount.value;
+        const pwd = loginPassword.value;
+        if (!acc || !userCredentials[acc]) {
+            loginError.style.display = 'block';
+            return;
+        }
+        if (userCredentials[acc].pwd === pwd) {
+            currentUser = acc;
+            currentRole = userCredentials[acc].role;
+            localStorage.setItem("loggedInUser", currentUser);
+            localStorage.setItem("loggedInRole", currentRole);
+            loginError.style.display = 'none';
+            loginPassword.value = ''; 
+            checkLoginState();
+        } else {
+            loginError.style.display = 'block';
+        }
+    };
+
+    logoutBtn.onclick = () => {
+        if(confirm("確定要登出嗎？")) {
+            currentUser = null;
+            currentRole = null;
+            localStorage.removeItem("loggedInUser");
+            localStorage.removeItem("loggedInRole");
+            if(video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+            checkLoginState();
+        }
+    };
+
+    checkLoginState();
+
+    // --- 頁籤切換邏輯 ---
+    const tabRegister = document.getElementById('tab-register');
+    const tabQuery = document.getElementById('tab-query');
+    const sectionRegister = document.getElementById('section-register');
+    const sectionQuery = document.getElementById('section-query');
+
+    tabRegister.onclick = () => {
+        tabRegister.classList.add('active');
+        tabQuery.classList.remove('active');
+        sectionRegister.classList.add('active');
+        sectionQuery.classList.remove('active');
+    };
+
+    tabQuery.onclick = () => {
+        tabQuery.classList.add('active');
+        tabRegister.classList.remove('active');
+        sectionQuery.classList.add('active');
+        sectionRegister.classList.remove('active');
+        
+        // 暫停相機節省資源
+        if(video && video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+            document.getElementById('start-btn').style.display = 'block';
+            document.getElementById('scan-btn').disabled = true;
+            document.getElementById('status').innerText = '相機已關閉';
+        }
+    };
+
+    // --- 查詢紀錄邏輯 ---
+    executeQueryBtn.onclick = async () => {
+        const targetDate = queryDate.value;
+        if (!targetDate) { alert("請選擇日期"); return; }
+        
+        const targetUser = currentRole.includes("所有人") ? queryUserSelect.value : currentUser;
+        
+        queryStatus.innerText = "資料讀取中...";
+        queryTbody.innerHTML = '<tr><td colspan="5" class="no-data">讀取中...</td></tr>';
+        executeQueryBtn.disabled = true;
+        exportExcelBtn.style.display = 'none';
+
+        try {
+            const recordsRef = ref(db, 'violation_records');
+            const snapshot = await get(recordsRef);
+            let results = [];
+
+            if (snapshot.exists()) {
+                const allData = snapshot.val();
+                
+                // 遍歷所有紀錄節點 (節點名稱即為登記者帳號)
+                for (const registrar in allData) {
+                    // 如果不是查詢所有人，且節點不是目標登記者，則跳過
+                    if (targetUser !== "ALL" && registrar !== targetUser) continue;
+                    
+                    const userRecords = allData[registrar];
+                    for (const pushId in userRecords) {
+                        const record = userRecords[pushId];
+                        
+                        // 處理時間格式
+                        let recordDateStr = "";
+                        let displayTime = "";
+                        if (record.timestamp) {
+                            const dateObj = new Date(record.timestamp);
+                            // 將時間轉為本地 YYYY-MM-DD
+                            const tzOffset = dateObj.getTimezoneOffset() * 60000; // offset in milliseconds
+                            recordDateStr = (new Date(dateObj - tzOffset)).toISOString().split('T')[0];
+                            const timeStr = dateObj.toLocaleTimeString('zh-TW', {hour: '2-digit', minute:'2-digit'});
+                            displayTime = `${recordDateStr} ${timeStr}`;
+                        }
+                        
+                        // 比對日期
+                        if (recordDateStr === targetDate) {
+                            results.push({
+                                time: displayTime,
+                                rawTimestamp: record.timestamp,
+                                registrar: registrar,
+                                class: record.class || "",
+                                name: record.name || "",
+                                item: record.violationItem || ""
+                            });
+                        }
+                    }
+                }
+                
+                // 依時間排序 (新到舊)
+                results.sort((a, b) => b.rawTimestamp - a.rawTimestamp);
+                
+                if (results.length > 0) {
+                    queryTbody.innerHTML = "";
+                    results.forEach(res => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${res.time}</td>
+                            <td>${res.registrar}</td>
+                            <td>${res.class}</td>
+                            <td>${res.name}</td>
+                            <td>${res.item}</td>
+                        `;
+                        queryTbody.appendChild(tr);
+                    });
+                    queryStatus.innerText = `查詢完成，共 ${results.length} 筆紀錄。`;
+                    exportExcelBtn.style.display = 'block';
+                } else {
+                    queryTbody.innerHTML = '<tr><td colspan="5" class="no-data">該日期無符合條件的違規紀錄</td></tr>';
+                    queryStatus.innerText = "查詢完成。";
+                    exportExcelBtn.style.display = 'none';
+                }
+            } else {
+                queryTbody.innerHTML = '<tr><td colspan="5" class="no-data">資料庫中尚無任何違規紀錄</td></tr>';
+                queryStatus.innerText = "查詢完成。";
+                exportExcelBtn.style.display = 'none';
+            }
+        } catch (err) {
+            console.error(err);
+            queryStatus.innerText = "查詢失敗，請檢查網路連線。";
+            queryTbody.innerHTML = '<tr><td colspan="5" class="no-data" style="color:red;">發生錯誤</td></tr>';
+        }
+        
+        executeQueryBtn.disabled = false;
+    };
+
+    // --- 原本的掃描與登記邏輯 ---
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('snapshot');
     const startBtn = document.getElementById('start-btn');
@@ -83,45 +417,44 @@
     const manualInput = document.getElementById('manual-input');
     const status = document.getElementById('status');
     const resultBox = document.getElementById('result-box');
+    const submitBtn = document.getElementById('submit-btn');
+    const saveMsg = document.getElementById('save-msg');
+    const violationInput = document.getElementById('violation-input');
 
-    // 開啟相機
+    let currentStudent = null;
+
     startBtn.onclick = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-            setupVideo(stream);
+            video.srcObject = stream;
+            startBtn.style.display = 'none';
+            scanBtn.disabled = false;
+            status.innerText = "相機已啟動，請對準學號";
         } catch (err) {
-            console.warn("無法開啟後鏡頭，嘗試預設鏡頭...", err);
+            console.warn("無法開啟後鏡頭", err);
             try {
                 const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                setupVideo(fallbackStream);
+                video.srcObject = fallbackStream;
+                startBtn.style.display = 'none';
+                scanBtn.disabled = false;
+                status.innerText = "相機已啟動，請對準學號";
             } catch (fallbackErr) {
                 alert("無法存取相機，請允許權限。");
             }
         }
     };
 
-    function setupVideo(stream) {
-        video.srcObject = stream;
-        startBtn.style.display = 'none';
-        scanBtn.disabled = false;
-        status.innerText = "相機已啟動，請對準學號";
-    }
-
-    // 手動查詢按鈕
     manualBtn.onclick = () => {
         const id = manualInput.value.trim();
-        if(id) {
-            queryAndSave(id);
-        } else {
-            status.innerText = "請輸入學號";
-        }
+        if(id) { queryStudent(id); } else { status.innerText = "請輸入學號"; }
     };
 
-    // 掃描與辨識
     scanBtn.onclick = async () => {
         status.innerText = "辨識中...";
         scanBtn.disabled = true;
         resultBox.style.display = 'none';
+        saveMsg.innerText = '';
+        currentStudent = null;
 
         const context = canvas.getContext('2d');
         canvas.width = video.videoWidth;
@@ -129,68 +462,91 @@
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         try {
-            const result = await Tesseract.recognize(canvas, 'eng', {
-                tessedit_char_whitelist: '0123456789',
-            });
+            const result = await Tesseract.recognize(canvas, 'eng', { tessedit_char_whitelist: '0123456789' });
             const studentId = result.data.text.replace(/[^0-9]/g, '');
 
-            if (studentId.length >= 4) {
-                await queryAndSave(studentId);
-            } else {
-                status.innerText = "辨識失敗或學號太短，請再試一次";
-                scanBtn.disabled = false;
-            }
-        } catch (err) {
-            status.innerText = "辨識發生錯誤";
-            scanBtn.disabled = false;
-        }
+            if (studentId.length >= 4) { await queryStudent(studentId); } 
+            else { status.innerText = "辨識失敗或學號太短，請再試一次"; scanBtn.disabled = false; }
+        } catch (err) { status.innerText = "辨識發生錯誤"; scanBtn.disabled = false; }
     };
 
-    // 資料庫查詢與儲存 (修改為依據 studentId 欄位搜尋)
-    async function queryAndSave(id) {
+    async function queryStudent(id) {
         status.innerText = `查詢學號：${id}...`;
         scanBtn.disabled = true;
+        saveMsg.innerText = '';
+        currentStudent = null;
+        violationInput.value = ""; 
         
         try {
-            // 假設學生的資料都存在 'students' 這個節點下
             const studentsRef = ref(db, 'students');
-            
-            // 建立查詢條件：找欄位 'studentId' 等於我們掃描到(或輸入)的 id
             const q = query(studentsRef, orderByChild('studentId'), equalTo(id));
             const snapshot = await get(q);
 
             if (snapshot.exists()) {
                 let data = null;
-                // 因為可能有多筆符合條件的資料，Firebase 會回傳一個列表，我們取出第一筆
-                snapshot.forEach((childSnapshot) => {
-                    data = childSnapshot.val();
-                });
-
-                document.getElementById('res-id').innerText = data.studentId || id;
-                document.getElementById('res-class').innerText = data.class || "未設定";
-                document.getElementById('res-name').innerText = data.name || "未設定";
-                
-                // 儲存掃描紀錄
-                await push(ref(db, 'scan_records'), {
-                    studentId: data.studentId || id,
-                    name: data.name || "",
-                    class: data.class || "",
-                    timestamp: serverTimestamp()
-                });
-
-                document.getElementById('save-msg').innerText = "✅ 已成功紀錄至資料庫";
+                snapshot.forEach((childSnapshot) => { data = childSnapshot.val(); });
+                currentStudent = { studentId: data.studentId || id, class: data.class || "未設定", name: data.name || "未設定" };
+                document.getElementById('res-id').innerText = currentStudent.studentId;
+                document.getElementById('res-class').innerText = currentStudent.class;
+                document.getElementById('res-name').innerText = currentStudent.name;
                 resultBox.style.display = 'block';
-                status.innerText = "查詢完成！";
+                status.innerText = "查詢成功，請選擇或輸入違規項目並登記。";
             } else {
                 status.innerText = `資料庫中找不到學號為 ${id} 的學生。`;
                 resultBox.style.display = 'none';
             }
-        } catch (err) {
-            console.error(err);
-            status.innerText = "資料庫連線錯誤，請檢查權限設定。";
-        }
+        } catch (err) { console.error(err); status.innerText = "資料庫連線錯誤。"; }
         scanBtn.disabled = false;
     }
+
+    submitBtn.onclick = async () => {
+        if (!currentStudent) return;
+        const selectedViolation = violationInput.value.trim();
+        if (!selectedViolation) { alert("請選擇或手動輸入一項違規事項！"); return; }
+
+        submitBtn.disabled = true;
+        saveMsg.style.color = '#555';
+        saveMsg.innerText = "資料傳送中...";
+
+        try {
+            await push(ref(db, `violation_records/${currentUser}`), {
+                studentId: currentStudent.studentId,
+                name: currentStudent.name,
+                class: currentStudent.class,
+                violationItem: selectedViolation,
+                timestamp: serverTimestamp()
+            });
+            saveMsg.style.color = '#34a853';
+            saveMsg.innerText = "✅ 登記成功！";
+            status.innerText = "已完成登記。";
+            manualInput.value = "";
+            violationInput.value = "";
+        } catch (error) {
+            saveMsg.style.color = '#ea4335';
+            saveMsg.innerText = "❌ 登記失敗。";
+        }
+        submitBtn.disabled = false;
+    };
+
+    // --- 匯出 Excel 邏輯 ---
+    const exportExcelBtn = document.getElementById('export-excel-btn');
+    exportExcelBtn.onclick = () => {
+        const table = document.querySelector('#query-table-container table');
+        
+        const firstCell = table.querySelector('tbody tr td');
+        if (firstCell && firstCell.classList.contains('no-data')) {
+            alert('沒有資料可供匯出');
+            return;
+        }
+
+        const wb = XLSX.utils.table_to_book(table, {sheet: "違規紀錄"});
+        
+        const dateStr = queryDate.value || "所有日期";
+        const filename = `學生違規紀錄_${dateStr}.xlsx`;
+        
+        XLSX.writeFile(wb, filename);
+    };
+
 </script>
 
 </body>
