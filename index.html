@@ -63,7 +63,11 @@
             body { padding: 10px; }
             .query-controls { flex-direction: column; }
         }
-    </style>
+    
+        .btn-delete { background-color: #ea4335; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.9rem; font-weight: bold; }
+        .btn-delete:hover { background-color: #c5221f; }
+        .query-controls { align-items: center; }
+</style>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -175,11 +179,12 @@
                                 <th style="width: 15%;">登記者</th>
                                 <th style="width: 20%;">班級</th>
                                 <th style="width: 20%;">姓名</th>
-                                <th style="width: 25%;">違規項目</th>
+                                <th style="width: 20%;">違規項目</th>
+                                <th style="width: 10%;">操作</th>
                             </tr>
                         </thead>
                         <tbody id="query-tbody">
-                            <tr><td colspan="5" class="no-data">請選擇日期後點擊查詢</td></tr>
+                            <tr><td colspan="6" class="no-data">請選擇日期後點擊查詢</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -190,7 +195,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-    import { getDatabase, ref, get, push, serverTimestamp, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+    import { getDatabase, ref, get, push, serverTimestamp, query, orderByChild, equalTo, remove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyD8JZk2LOuK77rmJ8-c6eXSAiGOCJATWqE",
@@ -324,7 +329,7 @@
         const targetUser = currentRole.includes("所有人") ? queryUserSelect.value : currentUser;
         
         queryStatus.innerText = "資料讀取中...";
-        queryTbody.innerHTML = '<tr><td colspan="5" class="no-data">讀取中...</td></tr>';
+        queryTbody.innerHTML = '<tr><td colspan="6" class="no-data">讀取中...</td></tr>';
         executeQueryBtn.disabled = true;
         exportExcelBtn.style.display = 'none';
 
@@ -363,6 +368,7 @@
                                 time: displayTime,
                                 rawTimestamp: record.timestamp,
                                 registrar: registrar,
+                                pushId: pushId,
                                 class: record.class || "",
                                 name: record.name || "",
                                 item: record.violationItem || ""
@@ -384,25 +390,26 @@
                             <td>${res.class}</td>
                             <td>${res.name}</td>
                             <td>${res.item}</td>
+                            <td><button class="btn-delete" data-registrar="${res.registrar}" data-pushid="${res.pushId}">刪除</button></td>
                         `;
                         queryTbody.appendChild(tr);
                     });
                     queryStatus.innerText = `查詢完成，共 ${results.length} 筆紀錄。`;
                     exportExcelBtn.style.display = 'block';
                 } else {
-                    queryTbody.innerHTML = '<tr><td colspan="5" class="no-data">該日期無符合條件的違規紀錄</td></tr>';
+                    queryTbody.innerHTML = '<tr><td colspan="6" class="no-data">該日期無符合條件的違規紀錄</td></tr>';
                     queryStatus.innerText = "查詢完成。";
                     exportExcelBtn.style.display = 'none';
                 }
             } else {
-                queryTbody.innerHTML = '<tr><td colspan="5" class="no-data">資料庫中尚無任何違規紀錄</td></tr>';
+                queryTbody.innerHTML = '<tr><td colspan="6" class="no-data">資料庫中尚無任何違規紀錄</td></tr>';
                 queryStatus.innerText = "查詢完成。";
                 exportExcelBtn.style.display = 'none';
             }
         } catch (err) {
             console.error(err);
             queryStatus.innerText = "查詢失敗，請檢查網路連線。";
-            queryTbody.innerHTML = '<tr><td colspan="5" class="no-data" style="color:red;">發生錯誤</td></tr>';
+            queryTbody.innerHTML = '<tr><td colspan="6" class="no-data" style="color:red;">發生錯誤</td></tr>';
         }
         
         executeQueryBtn.disabled = false;
@@ -528,6 +535,35 @@
         submitBtn.disabled = false;
     };
 
+    
+    // --- 刪除紀錄邏輯 ---
+    queryTbody.addEventListener('click', async (e) => {
+        if (e.target && e.target.classList.contains('btn-delete')) {
+            const btn = e.target;
+            const registrar = btn.getAttribute('data-registrar');
+            const pushId = btn.getAttribute('data-pushid');
+            
+            if (confirm("確定要刪除這筆違規紀錄嗎？刪除後無法復原。")) {
+                const originalText = btn.innerText;
+                btn.innerText = "刪除中...";
+                btn.disabled = true;
+                
+                try {
+                    const recordRef = ref(db, `violation_records/${registrar}/${pushId}`);
+                    await remove(recordRef);
+                    // 刪除成功後，重新執行查詢以更新畫面
+                    executeQueryBtn.click();
+                } catch (error) {
+                    console.error("刪除失敗", error);
+                    alert("刪除失敗，請檢查權限或網路連線。");
+                    btn.innerText = originalText;
+                    btn.disabled = false;
+                }
+            }
+        }
+    });
+
+
     // --- 匯出 Excel 邏輯 ---
     const exportExcelBtn = document.getElementById('export-excel-btn');
     exportExcelBtn.onclick = () => {
@@ -551,3 +587,4 @@
 
 </body>
 </html>
+
