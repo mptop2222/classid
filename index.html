@@ -495,17 +495,20 @@
                 <th style="width: 20%;">姓名</th>
                 <th style="width: 10%;">操作</th>
             </tr>`;
+            queryTbody.innerHTML = `<tr><td colspan="6" class="no-data">請點擊查詢</td></tr>`;
         } else {
+            // 一般違規加入「學號」欄位
             queryThead.innerHTML = `<tr>
-                <th style="width: 20%;">日期時間</th>
-                <th style="width: 15%;">登記者</th>
-                <th style="width: 20%;">班級</th>
-                <th style="width: 20%;">姓名</th>
-                <th style="width: 15%;">違規項目</th>
+                <th style="width: 15%;">日期時間</th>
+                <th style="width: 10%;">登記者</th>
+                <th style="width: 15%;">班級</th>
+                <th style="width: 15%;">學號</th>
+                <th style="width: 15%;">姓名</th>
+                <th style="width: 20%;">違規項目</th>
                 <th style="width: 10%;">操作</th>
             </tr>`;
+            queryTbody.innerHTML = `<tr><td colspan="7" class="no-data">請點擊查詢</td></tr>`;
         }
-        queryTbody.innerHTML = `<tr><td colspan="6" class="no-data">請點擊查詢</td></tr>`;
         exportExcelBtn.style.display = 'none';
         queryStatus.innerText = '';
     }
@@ -519,8 +522,11 @@
         const qType = queryTypeSelect.value;
         const targetUser = currentRole.includes("所有人") ? queryUserSelect.value : currentUser;
         
+        // 根據查詢類別設定正確的 colspan
+        const colspanNum = qType === 'tardy' ? 6 : 7;
+        
         queryStatus.innerText = "資料讀取中...";
-        queryTbody.innerHTML = '<tr><td colspan="6" class="no-data">讀取中...</td></tr>';
+        queryTbody.innerHTML = `<tr><td colspan="${colspanNum}" class="no-data">讀取中...</td></tr>`;
         executeQueryBtn.disabled = true;
         exportExcelBtn.style.display = 'none';
 
@@ -581,10 +587,12 @@
                                 <td><button class="btn-delete" data-type="${qType}" data-registrar="${res.registrar}" data-pushid="${res.pushId}">刪除</button></td>
                             `;
                         } else {
+                            // 這裡新增了 <td>${res.studentId}</td>
                             tr.innerHTML = `
                                 <td>${res.time}</td>
                                 <td>${res.registrar}</td>
                                 <td>${res.class}</td>
+                                <td>${res.studentId}</td>
                                 <td>${res.name}</td>
                                 <td>${res.item}</td>
                                 <td><button class="btn-delete" data-type="${qType}" data-registrar="${res.registrar}" data-pushid="${res.pushId}">刪除</button></td>
@@ -595,17 +603,17 @@
                     queryStatus.innerText = `查詢完成，共 ${results.length} 筆紀錄。`;
                     exportExcelBtn.style.display = 'inline-block';
                 } else {
-                    queryTbody.innerHTML = '<tr><td colspan="6" class="no-data">該日期無符合條件的紀錄</td></tr>';
+                    queryTbody.innerHTML = `<tr><td colspan="${colspanNum}" class="no-data">該日期無符合條件的紀錄</td></tr>`;
                     queryStatus.innerText = "查詢完成。";
                 }
             } else {
-                queryTbody.innerHTML = '<tr><td colspan="6" class="no-data">資料庫中尚無任何紀錄</td></tr>';
+                queryTbody.innerHTML = `<tr><td colspan="${colspanNum}" class="no-data">資料庫中尚無任何紀錄</td></tr>`;
                 queryStatus.innerText = "查詢完成。";
             }
         } catch (err) {
             console.error(err);
             queryStatus.innerText = "查詢失敗，請檢查網路連線。";
-            queryTbody.innerHTML = '<tr><td colspan="6" class="no-data" style="color:red;">發生錯誤</td></tr>';
+            queryTbody.innerHTML = `<tr><td colspan="${colspanNum}" class="no-data" style="color:red;">發生錯誤</td></tr>`;
         }
         
         executeQueryBtn.disabled = false;
