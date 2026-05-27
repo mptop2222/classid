@@ -114,7 +114,6 @@
                 <button class="tab-btn" id="tab-query">查詢紀錄</button>
             </div>
 
-            <!-- 遲到快速登記區塊 -->
             <div id="section-tardy" class="content-section active">
                 <h2 style="margin-bottom: 15px; color: #fbbc05;">⏰ 遲到快速登記</h2>
                 <div class="tardy-input-group">
@@ -136,14 +135,12 @@
                                 </tr>
                             </thead>
                             <tbody id="tardy-live-tbody">
-                                <!-- 即時資料會塞在這裡 -->
-                            </tbody>
+                                </tbody>
                         </table>
                     </div>
                 </div>
             </div>
 
-            <!-- 一般違規登記區塊 -->
             <div id="section-register" class="content-section">
                 <div id="manual-input-container">
                     <input type="text" id="manual-input" placeholder="輸入學號查詢">
@@ -163,7 +160,6 @@
                             <input list="violation-list" id="violation-input" placeholder="選擇或自行輸入...">
                             <datalist id="violation-list">
                                 <option value="戴耳環">
-                                <option value="指甲未剪">
                                 <option value="提早出班級">
                                 <option value="未繡學號">
                                 <option value="外套拉鏈未拉">
@@ -176,7 +172,6 @@
                 </div>
             </div>
 
-            <!-- 查詢區塊 -->
             <div id="section-query" class="content-section">
                 <div class="query-controls">
                     <div class="query-controls-row">
@@ -185,6 +180,11 @@
                             <option value="violation">📝 一般違規</option>
                         </select>
                         <input type="date" id="query-date">
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; padding-right: 5px; margin-top: -5px; margin-bottom: 5px;">
+                        <label style="cursor: pointer; font-weight: bold; color: #1a73e8; display: flex; align-items: center; font-size: 0.95rem;">
+                            <input type="checkbox" id="query-all-dates" style="width: auto; margin: 0 8px 0 0; box-shadow: none;"> 查詢所有日期
+                        </label>
                     </div>
                     <select id="query-user-select" style="display: none;">
                         <option value="ALL">所有人</option>
@@ -212,8 +212,7 @@
                 <div id="query-table-container" class="table-responsive">
                     <table id="query-main-table">
                         <thead id="query-thead">
-                            <!-- JS 會動態載入 Header -->
-                        </thead>
+                            </thead>
                         <tbody id="query-tbody">
                             <tr><td colspan="6" class="no-data">請選擇日期與類別後點擊查詢</td></tr>
                         </tbody>
@@ -483,8 +482,14 @@
     const queryStatus = document.getElementById('query-status');
     const queryThead = document.getElementById('query-thead');
     const queryUserSelect = document.getElementById('query-user-select');
+    const queryAllDatesCb = document.getElementById('query-all-dates');
 
     queryDate.value = new Date().toLocaleDateString('en-CA'); 
+
+    // 新增：當勾選「所有日期」時，將日期輸入框反灰停用
+    queryAllDatesCb.addEventListener('change', function() {
+        queryDate.disabled = this.checked;
+    });
 
     function updateTableHeaders() {
         if (queryTypeSelect.value === 'tardy') {
@@ -496,20 +501,17 @@
                 <th style="width: 20%;">姓名</th>
                 <th style="width: 10%;">操作</th>
             </tr>`;
-            queryTbody.innerHTML = `<tr><td colspan="6" class="no-data">請點擊查詢</td></tr>`;
         } else {
-            // 一般違規加入「學號」欄位
             queryThead.innerHTML = `<tr>
-                <th style="width: 15%;">日期時間</th>
-                <th style="width: 10%;">登記者</th>
-                <th style="width: 15%;">班級</th>
-                <th style="width: 15%;">學號</th>
-                <th style="width: 15%;">姓名</th>
-                <th style="width: 20%;">違規項目</th>
+                <th style="width: 20%;">日期時間</th>
+                <th style="width: 15%;">登記者</th>
+                <th style="width: 20%;">班級</th>
+                <th style="width: 20%;">姓名</th>
+                <th style="width: 15%;">違規項目</th>
                 <th style="width: 10%;">操作</th>
             </tr>`;
-            queryTbody.innerHTML = `<tr><td colspan="7" class="no-data">請點擊查詢</td></tr>`;
         }
+        queryTbody.innerHTML = `<tr><td colspan="6" class="no-data">請點擊查詢</td></tr>`;
         exportExcelBtn.style.display = 'none';
         queryStatus.innerText = '';
     }
@@ -518,16 +520,14 @@
 
     executeQueryBtn.onclick = async () => {
         const targetDate = queryDate.value;
-        if (!targetDate) { alert("請選擇日期"); return; }
+        const isAllDates = queryAllDatesCb.checked;
+        if (!isAllDates && !targetDate) { alert("請選擇日期或勾選「查詢所有日期」"); return; }
         
         const qType = queryTypeSelect.value;
         const targetUser = currentRole.includes("所有人") ? queryUserSelect.value : currentUser;
         
-        // 根據查詢類別設定正確的 colspan
-        const colspanNum = qType === 'tardy' ? 6 : 7;
-        
         queryStatus.innerText = "資料讀取中...";
-        queryTbody.innerHTML = `<tr><td colspan="${colspanNum}" class="no-data">讀取中...</td></tr>`;
+        queryTbody.innerHTML = '<tr><td colspan="6" class="no-data">讀取中...</td></tr>';
         executeQueryBtn.disabled = true;
         exportExcelBtn.style.display = 'none';
 
@@ -557,7 +557,8 @@
                             displayTime = `${recordDateStr} ${timeStr}`;
                         }
                         
-                        if (recordDateStr === targetDate) {
+                        // 修改：如果是查詢所有日期，或日期相符，就加入結果陣列
+                        if (isAllDates || recordDateStr === targetDate) {
                             results.push({
                                 time: displayTime,
                                 rawTimestamp: record.timestamp,
@@ -588,12 +589,10 @@
                                 <td><button class="btn-delete" data-type="${qType}" data-registrar="${res.registrar}" data-pushid="${res.pushId}">刪除</button></td>
                             `;
                         } else {
-                            // 這裡新增了 <td>${res.studentId}</td>
                             tr.innerHTML = `
                                 <td>${res.time}</td>
                                 <td>${res.registrar}</td>
                                 <td>${res.class}</td>
-                                <td>${res.studentId}</td>
                                 <td>${res.name}</td>
                                 <td>${res.item}</td>
                                 <td><button class="btn-delete" data-type="${qType}" data-registrar="${res.registrar}" data-pushid="${res.pushId}">刪除</button></td>
@@ -604,17 +603,17 @@
                     queryStatus.innerText = `查詢完成，共 ${results.length} 筆紀錄。`;
                     exportExcelBtn.style.display = 'inline-block';
                 } else {
-                    queryTbody.innerHTML = `<tr><td colspan="${colspanNum}" class="no-data">該日期無符合條件的紀錄</td></tr>`;
+                    queryTbody.innerHTML = '<tr><td colspan="6" class="no-data">無符合條件的紀錄</td></tr>';
                     queryStatus.innerText = "查詢完成。";
                 }
             } else {
-                queryTbody.innerHTML = `<tr><td colspan="${colspanNum}" class="no-data">資料庫中尚無任何紀錄</td></tr>`;
+                queryTbody.innerHTML = '<tr><td colspan="6" class="no-data">資料庫中尚無任何紀錄</td></tr>';
                 queryStatus.innerText = "查詢完成。";
             }
         } catch (err) {
             console.error(err);
             queryStatus.innerText = "查詢失敗，請檢查網路連線。";
-            queryTbody.innerHTML = `<tr><td colspan="${colspanNum}" class="no-data" style="color:red;">發生錯誤</td></tr>`;
+            queryTbody.innerHTML = '<tr><td colspan="6" class="no-data" style="color:red;">發生錯誤</td></tr>';
         }
         
         executeQueryBtn.disabled = false;
@@ -670,7 +669,7 @@
         });
 
         const wb = XLSX.utils.table_to_book(clonedTable, {sheet: qTypeStr});
-        const dateStr = queryDate.value || "所有日期";
+        const dateStr = queryAllDatesCb.checked ? "所有日期" : (queryDate.value || "所有日期");
         const filename = `學生${qTypeStr}_${dateStr}.xlsx`;
         
         XLSX.writeFile(wb, filename);
